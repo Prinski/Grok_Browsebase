@@ -2,16 +2,13 @@ name: Grok每日AI吃瓜日报
 
 on:
   schedule:
-    - cron: '0 1 * * *'   # UTC 01:00 = 北京时间 09:00，每天自动触发
-  workflow_dispatch:        # 支持手动触发
-
-permissions:
-  contents: read
+    - cron: '0 2 * * *'
+  workflow_dispatch:
 
 jobs:
   run-grok-auto-task:
     runs-on: ubuntu-latest
-    timeout-minutes: 60     # 整个任务最多跑 60 分钟
+    timeout-minutes: 15
 
     steps:
       - name: 检出代码
@@ -21,7 +18,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: ''
 
       - name: 安装依赖
         run: |
@@ -35,17 +31,25 @@ jobs:
           BROWSERBASE_CONTEXT_ID: ${{ secrets.BROWSERBASE_CONTEXT_ID }}
           JIJYUN_WEBHOOK_URL:     ${{ secrets.JIJYUN_WEBHOOK_URL }}
           FEISHU_WEBHOOK_URL:     ${{ secrets.FEISHU_WEBHOOK_URL }}
-          KIMI_API_KEY:           ${{ secrets.KIMI_API_KEY }}
           XAI_API_KEY:            ${{ secrets.XAI_API_KEY }}
         run: python grok_auto_task.py
 
-      - name: 上传调试截图
+      - name: 上传调试截图与封面图
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: grok-screenshots-${{ github.run_number }}
+          name: debug-artifacts
           path: |
-            00_initial.png
-            01_stage_a_done.png
-            02_stage_b_done.png
+            00_opened.png
+            01_model_menu.png
+            02_model_confirmed.png
+            03_stage_a_before.png
+            03_stage_a_done.png
+            03_stage_a_timeout.png
+            04_stage_b_before.png
+            04_stage_b_done.png
+            04_stage_b_timeout.png
+            05_stage_c_before.png
+            05_stage_c_done.png
+            cover.png
           if-no-files-found: ignore
