@@ -164,9 +164,24 @@ def wait_and_extract(page, label: str, screenshot_prefix: str,
 # ════════════════════════════════════════════════════════════════
 def build_prompt_a() -> str:
     date_today, date_yesterday = get_dates()
-    return f"""执行Tiered Scan模式：你现在是X商业情报深度分析师。任务：对指定的前50个核心账号进行过去24小时（since:{date_yesterday} until:{date_today}）最彻底搜索与分析。
+    return f"""执行Tiered Scan模式：你现在是X商业情报深度分析师。
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【Step 0：获取精确时间戳（必须首先执行！）】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+请立即用 code_execution 运行以下代码，获得 Unix 时间戳：
+import time
+now = int(time.time())
+since_ts = now - 86400
+print(f"since_time:{{since_ts}}  until_time:{{now}}")
+
+👉 在后续所有 x_keyword_search 调用中，必须使用上面输出的
+   since_time 和 until_time 参数（整数时间戳），不要使用日期字符串。
+   参考时间范围：北京时间 {date_yesterday} → {date_today}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【最优策略：3层分级扫描】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Tier1（核心）：全量搜索+拉所有回复线程。
 Tier2（活跃）：只看赞≥30的帖+互动分析。
 Tier3（泛列）：只抓赞≥100或大事件。
@@ -190,7 +205,10 @@ Tier3（泛列）：只抓赞≥100或大事件。
 
 def build_prompt_b() -> str:
     date_today, date_yesterday = get_dates()
-    return f"""执行Tiered Scan模式：这是第二轮搜索（覆盖后50个核心账号）。时间范围同样是 since:{date_yesterday} until:{date_today}。
+    return f"""执行Tiered Scan模式：这是第二轮搜索（覆盖后50个核心账号）。
+
+⚠️ 时间范围：请复用第一轮 Step0 已计算好的 since_time / until_time 时间戳，
+不要重新计算，不要使用日期字符串。参考范围：{date_yesterday} → {date_today}。
 
 【第二轮搜索：请分为以下3批调用 x_keyword_search】
 
