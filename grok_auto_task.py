@@ -19,12 +19,43 @@ def get_beijing_date_cn() -> str:
     return datetime.now(tz).strftime("%Y年%m月%d日")
 
 # ════════════════════════════════════════════════════════════════
+# Step 0：选择 Grok 4.2 Beta 模型
+# ════════════════════════════════════════════════════════════════
+def select_model(page):
+    print("\n[模型选择] 正在选择 Grok 4.2 Beta...", flush=True)
+    try:
+        # 点击模型选择器按钮（通常在输入框上方或顶部）
+        model_btn = page.wait_for_selector(
+            "button[aria-haspopup='listbox'], "
+            "button[aria-label*='model'], "
+            "button[aria-label*='Model'], "
+            "[data-testid='model-selector']",
+            timeout=10000
+        )
+        model_btn.click()
+        time.sleep(1)
+
+        # 点击 Grok 4.2 Beta 选项
+        grok4_option = page.wait_for_selector(
+            "li:has-text('4.2'), "
+            "div[role='option']:has-text('4.2'), "
+            "button:has-text('Grok 4.2'), "
+            "[data-value*='4.2']",
+            timeout=8000
+        )
+        grok4_option.click()
+        time.sleep(1)
+        print("[模型选择] ✅ 已选择 Grok 4.2 Beta", flush=True)
+    except Exception as e:
+        print(f"[模型选择] ⚠️ 选择失败，使用当前默认模型：{e}", flush=True)
+    page.screenshot(path="00_model_selected.png")
+
+# ════════════════════════════════════════════════════════════════
 # 核心函数 1：粘贴提示词并发送
 # ════════════════════════════════════════════════════════════════
 def send_prompt(page, prompt_text: str, label: str):
-    print(f"\n[{label}] 填写提示词...", flush=True)
+    print(f"\n[{label}] 填写提示词（共 {len(prompt_text)} 字符）...", flush=True)
 
-    # 定位输入框
     input_box = page.wait_for_selector(
         "div[contenteditable='true'], textarea",
         timeout=30000
@@ -32,45 +63,39 @@ def send_prompt(page, prompt_text: str, label: str):
     input_box.click()
     time.sleep(0.5)
 
-    # 清空输入框
+    # 清空
     page.keyboard.press("Control+a")
     page.keyboard.press("Backspace")
     time.sleep(0.3)
 
-    # 用剪贴板 API 粘贴（速度快，不逐字输入）
-    page.evaluate(f"""
-        const text = {json.dumps(prompt_text)};
+    # 剪贴板粘贴
+    page.evaluate("""(text) => {
         const dt = new DataTransfer();
         dt.setData('text/plain', text);
         document.activeElement.dispatchEvent(
-            new ClipboardEvent('paste', {{clipboardData: dt, bubbles: true}})
+            new ClipboardEvent('paste', {clipboardData: dt, bubbles: true})
         );
-    """)
-    time.sleep(1)
+    }""", prompt_text)
+    time.sleep(1.5)
 
     page.screenshot(path=f"before_{label}.png")
 
-    # 点击发送按钮
+    # 点发送
     send_btn = page.wait_for_selector(
         "button[aria-label='Send message'], button[type='submit']",
         timeout=10000
     )
     send_btn.click()
-    print(f"[{label}] ✅ 已发送", flush=True)
-    time.sleep(4)  # 等 Grok 开始生成
+    print(f"[{label}] ✅ 已发送，等待 Grok 开始生成...", flush=True)
+    time.sleep(5)
 
 # ════════════════════════════════════════════════════════════════
-# 核心函数 2：等待 Grok 生成完毕，返回最新回复的 Markdown 文本
+# 核心函数 2：等待生成完毕，返回最新回复文本
 # ════════════════════════════════════════════════════════════════
 def wait_and_extract(page, label: str,
                      interval: int = 3,
                      stable_rounds: int = 4,
                      max_wait: int = 120) -> str:
-    """
-    每隔 interval 秒检查最后一条回复的字符数。
-    连续 stable_rounds 次不变 → 生成完毕。
-    超过 max_wait 秒强制取结果。
-    """
     print(f"[{label}] 等待 Grok 回复（最长 {max_wait}s）...", flush=True)
     last_len = -1
     stable   = 0
@@ -80,14 +105,12 @@ def wait_and_extract(page, label: str,
         time.sleep(interval)
         elapsed += interval
 
-        text = page.evaluate("""
-            () => {
-                const msgs = document.querySelectorAll(
-                    '[data-testid="message"], .message-bubble, .response-content'
-                );
-                return msgs.length ? msgs[msgs.length - 1].innerText : "";
-            }
-        """)
+        text = page.evaluate("""() => {
+            const msgs = document.querySelectorAll(
+                '[data-testid="message"], .message-bubble, .response-content'
+            );
+            return msgs.length ? msgs[msgs.length - 1].innerText : "";
+        }""")
 
         cur_len = len(text.strip())
         print(f"  {elapsed}s | 字符数: {cur_len}", flush=True)
@@ -102,22 +125,21 @@ def wait_and_extract(page, label: str,
             stable   = 0
             last_len = cur_len
 
-    print(f"[{label}] ⚠️ 超时，强制取当前内容", flush=True)
+    print(f"[{label}] ⚠️ 已达上限 {max_wait}s，强制取结果", flush=True)
     page.screenshot(path=f"timeout_{label}.png")
-    return page.evaluate("""
-        () => {
-            const msgs = document.querySelectorAll(
-                '[data-testid="message"], .message-bubble, .response-content'
-            );
-            return msgs.length ? msgs[msgs.length - 1].innerText : "";
-        }
-    """).strip()
+    return page.evaluate("""() => {
+        const msgs = document.querySelectorAll(
+            '[data-testid="message"], .message-bubble, .response-content'
+        );
+        return msgs.length ? msgs[msgs.length - 1].innerText : "";
+    }""").strip()
 
 # ════════════════════════════════════════════════════════════════
-# 阶段 A 提示词
+# 阶段 A 提示词（固定）
 # ════════════════════════════════════════════════════════════════
 def build_prompt_a() -> str:
-    return f"""今天是新加坡/北京时间 {get_beijing_date_cn()}。你现在是一台绝对客观、严格遵守底层物理限制的"X 商业情报吸尘器"。
+    date_string = get_beijing_date_cn()
+    return f"""今天是新加坡/北京时间 {date_string}。你现在是一台绝对客观、严格遵守底层物理限制的"X 商业情报吸尘器"。
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【阶段 0：前置时间计算（必须首先执行！）】
@@ -159,44 +181,87 @@ print(f"since_time:{{now - 86400}} until_time:{{now}}")
 最后附上单行检索日志。"""
 
 # ════════════════════════════════════════════════════════════════
-# 阶段 B 提示词（在同一对话中发送，Grok 已有阶段 A 的上下文）
+# 阶段 B 提示词（固定）
 # ════════════════════════════════════════════════════════════════
 def build_prompt_b() -> str:
-    return f"""基于以上阶段 A 的全量数据，请生成今日（{get_beijing_date_cn()}）AI 吃瓜日报。
+    date_string = get_beijing_date_cn()
+    return f"""【阶段 B：主编排版与深度解码】
 
-要求：
-1. 从中选出 5-8 条最值得关注的信息，按重要性排序
-2. 每条写 2-3 句分析（是什么 → 为什么重要 → 影响是什么）
-3. 最后附"今日总结"（3-5句，宏观视角）
+你现在的角色是"AI 圈的顶级观察员与吃瓜课代表"。
 
-输出格式：**标准 Markdown**
-- 用 ## 作为每条新闻的标题
-- 用加粗标注关键词
-- 最后的总结用 > 引用块格式
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【🧠 第一步：深度思考与打草稿】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+为了保证日报品质，请先进行深度的"思维链"分析。
+1. 挑选最有价值的 10 个话题。
+2. 仔细推敲"隐性博弈"和"资本风向标"的底层逻辑。
+3. 思考过程你可以畅所欲言，但必须放在【最终成稿】之前。
 
-直接输出 Markdown 正文，不要任何解释。"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【🚨 第二步：最终机器输出规范（严格执行）】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+完成思考后，请严格按以下格式输出最终定稿：
+
+1. 强制机器抓取标识（极其重要）：为了防止你的排版被网页吃掉，你必须将所有最终输出内容，**完整包裹在一个 markdown 代码块中**（即使用 ```markdown 开始，``` 结束）。在代码块之外，不准说任何多余的废话！
+   ⚠️ 绝对禁止将这对代码块符号放在任何"思考"或"草稿"段落中。
+2. 代码块内防嵌套：在 ```markdown 内部的正文中，严禁再嵌套使用三个反引号包裹任何局部内容。
+3. 绝不保留占位说明：下面模板中的括号提示语，请替换为你的真实分析，绝不能把"在此处填写"原样输出！
+
+```markdown
+📡 AI圈极客吃瓜日报 | {date_string}
+
+**🏰 【巨头宫斗】**
+
+**🍉 1. 填入真实话题标题**
+**🗣️ 极客原声态：**
+@原推账号 | 真实姓名 (❤️赞/💬评)
+> "填入中文译文，绝对不要包含任何URL链接"
+**📝 捕手解码：**
+• 📌 增量事实：填入对该事件的客观事实补充
+• 🧠 隐性博弈：填入巨头或行业之间的暗战剖析
+• 🎯 资本风向标：填入对投资或商业趋势的研判
+
+**🍉 2. 填入下一个话题标题**
+...格式同上...
+
+---
+
+**🇨🇳 【中文圈大瓜】**
+
+**🍉 3. 填入话题标题**
+...以此类推，完成后续维度共 10 个话题...
+```"""
+
+# ════════════════════════════════════════════════════════════════
+# 从 Grok 回复中提取 ```markdown ... ``` 代码块内容
+# ════════════════════════════════════════════════════════════════
+def extract_markdown_block(text: str) -> str:
+    match = re.search(r'```markdown\s*([\s\S]+?)\s*```', text)
+    if match:
+        print("✅ 成功提取 markdown 代码块内容", flush=True)
+        return match.group(1).strip()
+    print("⚠️ 未找到 ```markdown 块，返回原始文本", flush=True)
+    return text.strip()
 
 # ════════════════════════════════════════════════════════════════
 # 推送：飞书
 # ════════════════════════════════════════════════════════════════
-def push_to_feishu(markdown_text: str):
+def push_to_feishu(text: str):
     if not FEISHU_WEBHOOK_URL:
         print("⚠️ FEISHU_WEBHOOK_URL 未配置，跳过", flush=True)
         return
-    clean = markdown_text.strip()[:4000]
-    payload = {"msg_type": "text", "content": {"text": clean}}
+    payload = {"msg_type": "text", "content": {"text": text[:4000]}}
     resp = requests.post(FEISHU_WEBHOOK_URL, json=payload, timeout=30)
     print(f"飞书推送：{resp.status_code}", flush=True)
 
 # ════════════════════════════════════════════════════════════════
 # 推送：极简云（微信公众号草稿）
 # ════════════════════════════════════════════════════════════════
-def push_to_jijyun(markdown_text: str, title: str):
+def push_to_jijyun(text: str, title: str):
     if not JIJYUN_WEBHOOK_URL:
         print("⚠️ JIJYUN_WEBHOOK_URL 未配置，跳过", flush=True)
         return
-    # 极简云接受 Markdown，转成简单 HTML
-    html = markdown_text.replace("\n", "<br>")
+    html = text.replace("\n", "<br>")
     payload = {"title": title, "content": html, "draft": True}
     resp = requests.post(JIJYUN_WEBHOOK_URL, json=payload, timeout=30)
     print(f"极简云推送：{resp.status_code}", flush=True)
@@ -224,38 +289,44 @@ def main():
         ctx     = browser.contexts[0]
         page    = ctx.new_page()
 
-        # ── Step 1：打开 Grok ─────────────────────────────────────
+        # ── Step 1：打开 Grok ────────────────────────────────────
         print("\n[Step 1] 打开 grok.com...", flush=True)
         page.goto("https://grok.com/", wait_until="domcontentloaded", timeout=60000)
         time.sleep(3)
         page.screenshot(path="00_opened.png")
 
-        # ── Step 2：发送阶段 A 提示词 ─────────────────────────────
+        # ── Step 2：选择 Grok 4.2 Beta 模型 ─────────────────────
+        select_model(page)
+
+        # ── Step 3：发送阶段 A 提示词 ────────────────────────────
         send_prompt(page, build_prompt_a(), "阶段A")
 
-        # ── Step 3：等待阶段 A 回复（最长 2 分钟）────────────────
+        # ── Step 4：等待阶段 A 完成（最长 2 分钟）───────────────
         wait_and_extract(page, "阶段A", interval=3, stable_rounds=4, max_wait=120)
 
-        # ── Step 4：发送阶段 B 提示词（同一对话，Grok 有上下文）──
+        # ── Step 5：发送阶段 B 提示词（同一对话，Grok 有上下文）─
         send_prompt(page, build_prompt_b(), "阶段B")
 
-        # ── Step 5：等待阶段 B 回复（最长 2 分钟），提取 Markdown ─
-        markdown_result = wait_and_extract(page, "阶段B", interval=3,
-                                            stable_rounds=4, max_wait=120)
-        print(f"\n最终 Markdown 长度：{len(markdown_result)} 字符", flush=True)
+        # ── Step 6：等待阶段 B 完成（最长 2 分钟），提取 Markdown
+        raw_result = wait_and_extract(page, "阶段B", interval=3,
+                                       stable_rounds=4, max_wait=120)
 
-        # ── Step 6：提取标题（取第一个 ## 行，否则用日期）────────
-        title_match = re.search(r'^#{1,2}\s+(.+)$', markdown_result, re.MULTILINE)
-        title = title_match.group(1).strip() if title_match else f"{get_beijing_date_cn()} AI 吃瓜日报"
+        # ── Step 7：提取 ```markdown 代码块 ─────────────────────
+        final_markdown = extract_markdown_block(raw_result)
+        print(f"\n最终内容长度：{len(final_markdown)} 字符", flush=True)
+
+        # ── Step 8：提取标题 ─────────────────────────────────────
+        title_match = re.search(r'AI圈极客吃瓜日报[^\n]*', final_markdown)
+        title = title_match.group(0).strip() if title_match else f"{get_beijing_date_cn()} AI圈极客吃瓜日报"
         print(f"标题：{title}", flush=True)
 
-        # ── Step 7：推送飞书 ──────────────────────────────────────
-        print("\n[Step 7] 推送飞书...", flush=True)
-        push_to_feishu(markdown_result)
+        # ── Step 9：推送飞书 ─────────────────────────────────────
+        print("\n[Step 9] 推送飞书...", flush=True)
+        push_to_feishu(final_markdown)
 
-        # ── Step 8：推送极简云（微信公众号草稿）──────────────────
-        print("\n[Step 8] 推送极简云...", flush=True)
-        push_to_jijyun(markdown_result, title)
+        # ── Step 10：推送极简云 ───────────────────────────────────
+        print("\n[Step 10] 推送极简云...", flush=True)
+        push_to_jijyun(final_markdown, title)
 
         browser.close()
 
