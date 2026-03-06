@@ -278,12 +278,12 @@ def build_prompt_c() -> str:
 # 调用 xAI Aurora API 生图
 # ════════════════════════════════════════════════════════════════
 def generate_cover_image(prompt: str) -> str:
-    """调用 xAI Aurora 生成图片，返回图片 URL。失败返回空字符串。"""
+    """调用 xAI grok-imagine-image 生成封面图，返回图片 URL。失败返回空字符串。"""
     if not XAI_API_KEY:
         print("⚠️ XAI_API_KEY 未配置，跳过生图", flush=True)
         return ""
 
-    print("\n[生图] 调用 xAI Aurora 生成封面图...", flush=True)
+    print("\n[生图] 调用 xAI grok-imagine-image 生成封面图...", flush=True)
     print(f"[生图] 提示词：{prompt[:120]}...", flush=True)
 
     try:
@@ -294,12 +294,12 @@ def generate_cover_image(prompt: str) -> str:
                 "Content-Type": "application/json"
             },
             json={
-                "model": "aurora",
-                "prompt": prompt,
-                "n": 1,
-                "size": "1792x1024"   # 16:9 横版封面
+                "model":        "grok-imagine-image",  # ✅ 正确模型名
+                "prompt":       prompt,
+                "n":            1,
+                "aspect_ratio": "16:9"                 # ✅ 正确字段名（非 size）
             },
-            timeout=60
+            timeout=90
         )
         resp.raise_for_status()
         image_url = resp.json()["data"][0]["url"]
