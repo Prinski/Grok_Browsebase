@@ -485,16 +485,16 @@ def main():
             # Step 3：注入阶段 A
             print("\n[Step 3] 阶段 A：120账号数据拉取", flush=True)
             inject_prompt(page, build_prompt_a(), "阶段A")
-            time.sleep(10)
-            wait_for_stable(page, "阶段A", stable_target=6, interval=5, max_loops=150)
+            time.sleep(5)
+            wait_for_stable(page, "阶段A", stable_target=4, interval=3, max_loops=70)
             page.screenshot(path="01_stage_a_done.png", full_page=True)
             print("📸 阶段A完成截图已保存", flush=True)
 
             # Step 4：注入阶段 B
             print("\n[Step 4] 阶段 B：深度排版编排", flush=True)
             inject_prompt(page, build_prompt_b(), "阶段B")
-            time.sleep(10)
-            wait_for_stable(page, "阶段B", stable_target=6, interval=5, max_loops=150)
+            time.sleep(5)
+            wait_for_stable(page, "阶段B", stable_target=4, interval=3, max_loops=70)
             page.screenshot(path="02_stage_b_done.png", full_page=True)
             print("📸 阶段B完成截图已保存", flush=True)
 
