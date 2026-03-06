@@ -258,48 +258,60 @@ def build_prompt_b() -> str:
 
 
 def build_prompt_c() -> str:
-    return """【阶段 C：封面图提示词生成】
+    return """【阶段 C：标题 + 封面图提示词生成】
 
-任务：从以上 10 条新闻中，找出冲突感最强、最具 drama 或吃瓜属性的核心事件。
-如果没有明显撕逼，就从中提炼出最具戏剧性张力的角度自由发挥。
+任务：从以上 10 条新闻中，找出最具冲突感、炸裂感或吃瓜属性的核心事件，完成以下两项输出：
 
-请生成一段英文文生图提示词，严格遵守以下要求：
+━━━ 输出一：微信公众号文章标题 ━━━
+从 10 条新闻中挑选 1～2 个最有冲击力的事件，写一个中文标题，要求：
+- 极度抓眼球，制造好奇心或情绪冲击
+- 风格参考：「XXX 公开撕 XXX：这场战争刚刚开始」「AI 圈最大瓜：XXX 当众打脸 XXX」
+- 可用数字、破折号、感叹号增强张力
+- 长度：15～30 个汉字
+- 禁止：平淡陈述句、学术腔
+
+━━━ 输出二：封面图英文提示词 ━━━
+针对同一核心事件，生成文生图提示词，严格遵守：
 - 风格：American comic book style，漫威/DC 面板感，bold black ink outlines，flat vibrant colors，halftone dot shading
 - 构图：两股势力或角色正面对抗，表情极度夸张，动作感强烈
-- 象征物：用抽象化符号代表事件主角（芯片/机器人/火箭/巨型拳头/美元等），禁止使用真实人脸和公司 Logo 原图
+- 象征物：用抽象化符号代表事件主角（芯片/机器人/火箭/巨型拳头/美元等），禁止真实人脸和公司 Logo 原图
 - 对话气泡：包含一句 ≤10 个英文单词的台词，点出冲突核心
 - 画幅：横版 16:9，适合作为公众号封面
 - 禁止：中文文字、水印、写实摄影感
 - 长度：英文提示词 ≤ 150 词
 
-只输出英文提示词本身，不要任何解释和前缀。"""
+━━━ 严格按以下格式输出，不要多余解释 ━━━
+TITLE: <中文标题>
+PROMPT: <英文提示词>
+
+⚠️ 只输出纯文字，不要生成图片，不要调用任何工具。"""
 
 # ════════════════════════════════════════════════════════════════
-# 调用 xAI Aurora API 生图
+# 调用硅基流动 SiliconFlow API 生图
 # ════════════════════════════════════════════════════════════════
 def generate_cover_image(prompt: str) -> str:
-    """调用 xAI grok-imagine-image 生成封面图，返回图片 URL。失败返回空字符串。"""
-    if not XAI_API_KEY:
-        print("⚠️ XAI_API_KEY 未配置，跳过生图", flush=True)
+    """调用硅基流动 FLUX.1-schnell 生成封面图，返回图片 URL。失败返回空字符串。"""
+    if not SF_API_KEY:
+        print("⚠️ SF_API_KEY 未配置，跳过生图", flush=True)
         return ""
 
-    print("\n[生图] 调用 xAI grok-imagine-image 生成封面图...", flush=True)
+    print("\n[生图] 调用硅基流动 FLUX.1-schnell 生成封面图...", flush=True)
     print(f"[生图] 提示词：{prompt[:120]}...", flush=True)
 
     try:
         resp = requests.post(
-            "https://api.x.ai/v1/images/generations",
+            "https://api.siliconflow.cn/v1/images/generations",
             headers={
-                "Authorization": f"Bearer {XAI_API_KEY}",
+                "Authorization": f"Bearer {SF_API_KEY}",
                 "Content-Type": "application/json"
             },
             json={
-                "model":        "grok-imagine-image",  # ✅ 正确模型名
-                "prompt":       prompt,
-                "n":            1,
-                "aspect_ratio": "16:9"                 # ✅ 正确字段名（非 size）
+                "model":      "black-forest-labs/FLUX.1-schnell",
+                "prompt":     prompt,
+                "n":          1,
+                "image_size": "1280x720"
             },
-            timeout=90
+            timeout=120
         )
         resp.raise_for_status()
         image_url = resp.json()["data"][0]["url"]
@@ -308,9 +320,6 @@ def generate_cover_image(prompt: str) -> str:
     except Exception as e:
         print(f"[生图] ❌ 生图失败：{e}", flush=True)
         return ""
-
-# ════════════════════════════════════════════════════════════════
-# 下载图片到本地（用于 Artifact 上传）
 # ════════════════════════════════════════════════════════════════
 def download_image(url: str, save_path: str = "cover.png") -> bool:
     if not url:
@@ -444,10 +453,14 @@ def main():
         cover_prompt_raw = wait_and_extract(page, "阶段C", "05_stage_c",
                                              interval=3, stable_rounds=3, max_wait=60,
                                              extend_if_growing=False)
-        # 清理多余前缀（Grok 有时会加"Sure, here is..."）
-        cover_prompt = cover_prompt_raw.strip().split("\n")[-1] \
-                       if "\n" in cover_prompt_raw else cover_prompt_raw.strip()
-        print(f"\n封面图提示词：{cover_prompt[:100]}...", flush=True)
+        # 从 TITLE:/PROMPT: 格式中分别解析
+        raw = cover_prompt_raw.strip()
+        title_c_match  = re.search(r"TITLE[:：]\s*(.+)", raw)
+        prompt_c_match = re.search(r"PROMPT[:：]\s*([\s\S]+)", raw)
+        cover_title_c  = title_c_match.group(1).strip()  if title_c_match  else ""
+        cover_prompt   = prompt_c_match.group(1).strip() if prompt_c_match else raw.split("\n")[-1].strip()
+        print(f"\n[阶段C] 动态标题：{cover_title_c}", flush=True)
+        print(f"[阶段C] 封面图提示词：{cover_prompt[:100]}...", flush=True)
 
         browser.close()
 
@@ -455,10 +468,13 @@ def main():
     cover_url = generate_cover_image(cover_prompt)
     download_image(cover_url, "cover.png")
 
-    # Step 7：提取标题
-    title_match = re.search(r'AI圈极客吃瓜日报[^\n]*', final_markdown)
-    title = title_match.group(0).strip() if title_match else \
-            f"{get_beijing_date_cn()} AI圈极客吃瓜日报"
+    # Step 7：标题优先用阶段C动态标题，fallback 正文标题
+    if cover_title_c:
+        title = f"{get_beijing_date_cn()} | {cover_title_c}"
+    else:
+        title_match = re.search(r'AI圈极客吃瓜日报[^\n]*', final_markdown)
+        title = title_match.group(0).strip() if title_match else \
+                f"{get_beijing_date_cn()} AI圈极客吃瓜日报"
     print(f"\n标题：{title}", flush=True)
 
     # Step 8：上传封面图到路过图床（获取永久公开 URL）
