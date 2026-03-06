@@ -1,7 +1,6 @@
 import os
 import re
 import time
-import json
 import requests
 from browserbase import Browserbase
 from playwright.sync_api import sync_playwright
@@ -19,71 +18,108 @@ def get_beijing_date_cn() -> str:
     return datetime.now(tz).strftime("%Y年%m月%d日")
 
 # ════════════════════════════════════════════════════════════════
-# Step 0：选择 Grok 4.2 Beta 模型
+# Step 0：打开模型选择器，开启「试试 Grok 4.20 测试版」Toggle
 # ════════════════════════════════════════════════════════════════
-def select_model(page):
-    print("\n[模型选择] 正在选择 Grok 4.2 Beta...", flush=True)
+def enable_grok4_beta(page):
+    print("\n[模型选择] 开启 Grok 4.20 测试版 Toggle...", flush=True)
     try:
-        # 点击模型选择器按钮（通常在输入框上方或顶部）
+        # 点击底部当前模型按钮（快速模式 ^ 那个）
         model_btn = page.wait_for_selector(
-            "button[aria-haspopup='listbox'], "
-            "button[aria-label*='model'], "
-            "button[aria-label*='Model'], "
-            "[data-testid='model-selector']",
-            timeout=10000
+            "button:has-text('快速模式'), "
+            "button:has-text('Fast'), "
+            "button:has-text('自动模式'), "
+            "button:has-text('Auto')",
+            timeout=15000
         )
         model_btn.click()
         time.sleep(1)
+        page.screenshot(path="01_model_menu.png")
 
-        # 点击 Grok 4.2 Beta 选项
-        grok4_option = page.wait_for_selector(
-            "li:has-text('4.2'), "
-            "div[role='option']:has-text('4.2'), "
-            "button:has-text('Grok 4.2'), "
-            "[data-value*='4.2']",
+        # 找到「试试 Grok 4.20 测试版」的 Toggle 按钮
+        toggle = page.wait_for_selector(
+            "button[role='switch'], "
+            "input[type='checkbox']",
             timeout=8000
         )
-        grok4_option.click()
-        time.sleep(1)
-        print("[模型选择] ✅ 已选择 Grok 4.2 Beta", flush=True)
+
+        # 检查 Toggle 是否已开启
+        is_checked = page.evaluate("""() => {
+            const sw = document.querySelector("button[role='switch']");
+            if (sw) return sw.getAttribute('aria-checked') === 'true' ||
+                          sw.getAttribute('data-state') === 'checked';
+            const cb = document.querySelector("input[type='checkbox']");
+            if (cb) return cb.checked;
+            return false;
+        }""")
+
+        if not is_checked:
+            toggle.click()
+            print("[模型选择] ✅ Toggle 已开启", flush=True)
+            time.sleep(1)
+        else:
+            print("[模型选择] ✅ Toggle 已是开启状态，无需操作", flush=True)
+
+        # 关闭下拉菜单（按 Esc）
+        page.keyboard.press("Escape")
+        time.sleep(0.5)
+        page.screenshot(path="02_model_confirmed.png")
+
     except Exception as e:
-        print(f"[模型选择] ⚠️ 选择失败，使用当前默认模型：{e}", flush=True)
-    page.screenshot(path="00_model_selected.png")
+        print(f"[模型选择] ⚠️ 操作失败：{e}，继续使用当前模型", flush=True)
 
 # ════════════════════════════════════════════════════════════════
-# 核心函数 1：粘贴提示词并发送
+# 核心函数 1：往 Grok 输入框填入文字并发送
+# 使用 execCommand 方案，适配 React contenteditable
 # ════════════════════════════════════════════════════════════════
 def send_prompt(page, prompt_text: str, label: str):
-    print(f"\n[{label}] 填写提示词（共 {len(prompt_text)} 字符）...", flush=True)
+    print(f"\n[{label}] 填入提示词（共 {len(prompt_text)} 字符）...", flush=True)
 
-    input_box = page.wait_for_selector(
+    # 等待输入框出现
+    page.wait_for_selector(
         "div[contenteditable='true'], textarea",
         timeout=30000
     )
-    input_box.click()
-    time.sleep(0.5)
 
-    # 清空
-    page.keyboard.press("Control+a")
-    page.keyboard.press("Backspace")
-    time.sleep(0.3)
+    # 用 execCommand 方案写入文字（兼容 React 受控组件）
+    import json
+    success = page.evaluate("""(text) => {
+        // 找输入框
+        const el = document.querySelector("div[contenteditable='true']")
+                || document.querySelector("textarea");
+        if (!el) return false;
 
-    # 剪贴板粘贴
-    page.evaluate("""(text) => {
-        const dt = new DataTransfer();
-        dt.setData('text/plain', text);
-        document.activeElement.dispatchEvent(
-            new ClipboardEvent('paste', {clipboardData: dt, bubbles: true})
-        );
+        el.focus();
+
+        // 全选清空
+        document.execCommand('selectAll', false, null);
+        document.execCommand('delete', false, null);
+
+        // 插入文字
+        document.execCommand('insertText', false, text);
+        return true;
     }""", prompt_text)
-    time.sleep(1.5)
 
+    if not success:
+        print(f"[{label}] ⚠️ execCommand 失败，改用 keyboard.type", flush=True)
+        inp = page.query_selector("div[contenteditable='true'], textarea")
+        inp.click()
+        page.keyboard.press("Control+a")
+        page.keyboard.press("Backspace")
+        # 分段输入避免超时（每500字符一段）
+        for i in range(0, len(prompt_text), 500):
+            page.keyboard.type(prompt_text[i:i+500])
+            time.sleep(0.2)
+
+    time.sleep(1.5)
     page.screenshot(path=f"before_{label}.png")
 
-    # 点发送
+    # 点击发送按钮（aria-label 是 Submit）
+    print(f"[{label}] 点击发送...", flush=True)
     send_btn = page.wait_for_selector(
-        "button[aria-label='Send message'], button[type='submit']",
-        timeout=10000
+        "button[aria-label='Submit']:not([disabled]), "
+        "button[aria-label='Send message']:not([disabled]), "
+        "button[type='submit']:not([disabled])",
+        timeout=15000
     )
     send_btn.click()
     print(f"[{label}] ✅ 已发送，等待 Grok 开始生成...", flush=True)
@@ -125,7 +161,7 @@ def wait_and_extract(page, label: str,
             stable   = 0
             last_len = cur_len
 
-    print(f"[{label}] ⚠️ 已达上限 {max_wait}s，强制取结果", flush=True)
+    print(f"[{label}] ⚠️ 超时，强制取当前内容", flush=True)
     page.screenshot(path=f"timeout_{label}.png")
     return page.evaluate("""() => {
         const msgs = document.querySelectorAll(
@@ -233,12 +269,12 @@ def build_prompt_b() -> str:
 ```"""
 
 # ════════════════════════════════════════════════════════════════
-# 从 Grok 回复中提取 ```markdown ... ``` 代码块内容
+# 提取 ```markdown 代码块内容
 # ════════════════════════════════════════════════════════════════
 def extract_markdown_block(text: str) -> str:
     match = re.search(r'```markdown\s*([\s\S]+?)\s*```', text)
     if match:
-        print("✅ 成功提取 markdown 代码块内容", flush=True)
+        print("✅ 成功提取 markdown 代码块", flush=True)
         return match.group(1).strip()
     print("⚠️ 未找到 ```markdown 块，返回原始文本", flush=True)
     return text.strip()
@@ -289,43 +325,42 @@ def main():
         ctx     = browser.contexts[0]
         page    = ctx.new_page()
 
-        # ── Step 1：打开 Grok ────────────────────────────────────
+        # ── Step 1：打开 Grok ─────────────────────────────────────
         print("\n[Step 1] 打开 grok.com...", flush=True)
         page.goto("https://grok.com/", wait_until="domcontentloaded", timeout=60000)
         time.sleep(3)
         page.screenshot(path="00_opened.png")
 
-        # ── Step 2：选择 Grok 4.2 Beta 模型 ─────────────────────
-        select_model(page)
+        # ── Step 2：开启 Grok 4.2 Beta Toggle ────────────────────
+        enable_grok4_beta(page)
 
-        # ── Step 3：发送阶段 A 提示词 ────────────────────────────
+        # ── Step 3：发送阶段 A ────────────────────────────────────
         send_prompt(page, build_prompt_a(), "阶段A")
 
-        # ── Step 4：等待阶段 A 完成（最长 2 分钟）───────────────
+        # ── Step 4：等待阶段 A 完成（最长 2 分钟）────────────────
         wait_and_extract(page, "阶段A", interval=3, stable_rounds=4, max_wait=120)
 
-        # ── Step 5：发送阶段 B 提示词（同一对话，Grok 有上下文）─
+        # ── Step 5：发送阶段 B（同一对话，Grok 有上下文）─────────
         send_prompt(page, build_prompt_b(), "阶段B")
 
-        # ── Step 6：等待阶段 B 完成（最长 2 分钟），提取 Markdown
-        raw_result = wait_and_extract(page, "阶段B", interval=3,
-                                       stable_rounds=4, max_wait=120)
-
-        # ── Step 7：提取 ```markdown 代码块 ─────────────────────
+        # ── Step 6：等待阶段 B 完成（最长 2 分钟），提取 Markdown ─
+        raw_result     = wait_and_extract(page, "阶段B", interval=3,
+                                           stable_rounds=4, max_wait=120)
         final_markdown = extract_markdown_block(raw_result)
         print(f"\n最终内容长度：{len(final_markdown)} 字符", flush=True)
 
-        # ── Step 8：提取标题 ─────────────────────────────────────
+        # ── Step 7：提取标题 ──────────────────────────────────────
         title_match = re.search(r'AI圈极客吃瓜日报[^\n]*', final_markdown)
-        title = title_match.group(0).strip() if title_match else f"{get_beijing_date_cn()} AI圈极客吃瓜日报"
+        title = title_match.group(0).strip() if title_match else \
+                f"{get_beijing_date_cn()} AI圈极客吃瓜日报"
         print(f"标题：{title}", flush=True)
 
-        # ── Step 9：推送飞书 ─────────────────────────────────────
-        print("\n[Step 9] 推送飞书...", flush=True)
+        # ── Step 8：推送飞书 ──────────────────────────────────────
+        print("\n[Step 8] 推送飞书...", flush=True)
         push_to_feishu(final_markdown)
 
-        # ── Step 10：推送极简云 ───────────────────────────────────
-        print("\n[Step 10] 推送极简云...", flush=True)
+        # ── Step 9：推送极简云 ────────────────────────────────────
+        print("\n[Step 9] 推送极简云...", flush=True)
         push_to_jijyun(final_markdown, title)
 
         browser.close()
