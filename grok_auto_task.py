@@ -390,7 +390,7 @@ def push_to_jijyun(text: str, title: str, cover_url: str = ""):
         "title":        title,
         "author":       "大尉Prinski",
         "html_content": html,
-        "cover_jpg":    cover_url       # Telegraph 永久 URL，微信可直接抓取
+        "cover_jpg":    cover_url       # 路过图床永久 URL，微信可直接抓取
     }
     resp = requests.post(JIJYUN_WEBHOOK_URL, json=payload, timeout=30)
     print(f"极简云推送：{resp.status_code} | {resp.text[:120]}", flush=True)
@@ -461,16 +461,16 @@ def main():
             f"{get_beijing_date_cn()} AI圈极客吃瓜日报"
     print(f"\n标题：{title}", flush=True)
 
-    # Step 8：上传封面图到 Telegraph（获取永久公开 URL）
-    telegraph_url   = upload_to_imgse("cover.png")
-    final_cover_url = telegraph_url if telegraph_url else cover_url
+    # Step 8：上传封面图到路过图床（获取永久公开 URL）
+    imgse_url       = upload_to_imgse("cover.png")
+    final_cover_url = imgse_url if imgse_url else cover_url
     print(f"封面图最终 URL：{final_cover_url[:80] if final_cover_url else '无'}", flush=True)
 
     # Step 9：推送飞书
     print("\n推送飞书...", flush=True)
     push_to_feishu(final_markdown, final_cover_url)
 
-    # Step 10：推送极简云（Telegraph 永久 URL → cover_jpg）
+    # Step 10：推送极简云（路过图床永久 URL → cover_jpg）
     print("推送极简云...", flush=True)
     push_to_jijyun(final_markdown, title, final_cover_url)
 
