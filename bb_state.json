@@ -1,7 +1,7 @@
 {
   "j7jNdTFM": {
-    "consecutive_failures": 2,
-    "cooldown_until": null
+    "consecutive_failures": 3,
+    "cooldown_until": "2026-04-06T07:32:43.217964"
   },
   "WrGKK6mo": {
     "consecutive_failures": 0,
