@@ -267,7 +267,7 @@ def build_prompt_a() -> str:
 import time
 now = int(time.time())
 since_ts = now - 86400
-print(f"since_time:{since_ts} until_time:{now}")
+print(f"since_time:{{since_ts}}  until_time:{{now}}")
 后续所有 x_keyword_search 必须复用这两个整数时间戳（since_time/until_time）。
 
 【核心策略】
@@ -327,7 +327,7 @@ Tier3：仅保留赞≥100或重大事件。
 
 严格模板：
 @@@START@@@
-📡 AI圈极客吃瓜日报 | 2026-03-07
+📡 AI圈极客吃瓜日报 | {date_today}
 
 **🏰 【巨头宫斗】**
 
