@@ -297,7 +297,7 @@ Tier3（泛列）：仅保留赞≥100或大事件帖。
 # ════════════════════════════════════════════════════════════════
 def build_prompt_b() -> str:
     date_today, date_yesterday = get_dates()
-    return f"""执行Tiered Scan模式：这是第二轮搜索（覆盖后50个核心账号）。
+    return f"""执行Tiered Scan模式：这是第二轮搜索，整个任务不得超过 90 秒，超时必须立即输出结果。
 
 【时间戳复用（必须第一步确认）】
 直接复用第一轮Step 0输出的 since_time 和 until_time 整数时间戳。
@@ -607,7 +607,7 @@ def main():
         # Step 3：阶段 A（第一轮扫描，50个账号前半段）
         send_prompt(page, build_prompt_a(), "阶段A", "03_stage_a")
         print("[阶段A] ⏳ 强制等待 90s，确保 Grok 工具调用完成...", flush=True)
-        time.sleep(90)
+        time.sleep(60)
         wait_and_extract(page, "阶段A", "03_stage_a",
                          interval=3, stable_rounds=4, max_wait=120,
                          extend_if_growing=True, min_len=100)
