@@ -285,6 +285,7 @@ Tier3（泛列）：仅保留赞≥100或大事件帖。
 1. 所有搜索优先带 since_time/until_time；若返回0条，立即去掉时间参数重试同一批次（必须成功）。
 2. 重点推文（赞>100或含争论）立即调用 x_thread_fetch 拉完整互动。
 3. 分析只关注：新观点、吵架记录、市场反馈强度。
+4. 所有引用的 X 帖子原文必须翻译成中文，严禁保留英文原文。
 
 【输出限制（严格遵守）】
 搜索完成后，只输出一段≤200字的"内部情报摘要"（含核心洞察+数据缓存），最后一行必须是：
@@ -327,21 +328,20 @@ Tier3：仅保留赞≥100或重大事件。
 
 严格模板：
 @@@START@@@
-📡 AI圈极客吃瓜日报 | {date_today}
+📡 昨夜，X上硅谷AI圈都在聊啥 | {date_today}
 
-**🏰 【巨头宫斗】**
+**🏰巨头宫斗**
 
 **🍉 1. 话题标题**
 **🗣️ 极客原声态：**
 @账号 | 姓名 | 身份
 > "中文翻译内容"(❤️赞/💬评)
-**📝 捕手解码：**
-• 📌 增量事实：...
-• 🧠 隐性博弈：...
-• 🎯 资本风向标：...
+**📝 严肃吃瓜：**
+• 📌 涨姿势：（补充增量事实和知识等）...
+• 🧠 猜博弈：（推测分析背后的隐性博弈等）...
+• 🎯 识风向：（一二级资本市场影响，如有）...
 
-（按此格式完成剩余话题，合理分配【巨头宫斗】【中文圈大瓜】【硬件与空间计算】【一级市场与研究员圈】等维度）
-
+（按此格式完成剩余话题，合理分配 巨头宫斗 中文圈 硬件与空间计算 投资人 等维度，也可按抓取内容总结各种热点维度）
 @@@END@@@"""
 
 
@@ -372,10 +372,21 @@ def build_prompt_c() -> str:
 - 长度：英文提示词≤150词
 - 禁止：中文文字、水印、写实感
 
+━━━ 输出三：深度解读 ━━━
+针对输出一中选定的核心事件，写一段深度解读，严格遵守：
+- 字数：150～200字以内
+- 重点分析对以下三类群体的影响：
+  (a) 🇨🇳 中国AI行业及从业人员
+  (b) 💰 中国VC一级市场投资人
+  (c) 👥 散户和普通群众
+- 语言简洁有力，每个维度1～2句话点明核心
+- 整体为流畅段落，禁止列表、禁止标题
+
 【输出铁闸（必须严格遵守）】
-只输出以下两行，禁止任何解释、思考、额外文字：
+只输出以下三行，禁止任何解释、思考、额外文字：
 TITLE: <中文标题>
-PROMPT: <英文提示词>"""
+PROMPT: <英文提示词>
+INSIGHT: <150～200字深度解读>"""
 
 
 # ════════════════════════════════════════════════════════════════
@@ -626,9 +637,10 @@ def main():
     if not session_id:
         raise RuntimeError("❌ 所有 Browserbase 账号均不可用（额度耗尽或冷却中），请充值或新增账号")
 
-    raw_b_text   = ""
-    cover_prompt = ""
+    raw_b_text    = ""
+    cover_prompt  = ""
     cover_title_c = ""
+    cover_insight = ""
 
     with sync_playwright() as pw:
         browser = pw.chromium.connect_over_cdp(
@@ -671,14 +683,19 @@ def main():
                                      extend_if_growing=False)
 
         # 解析 TITLE / PROMPT
-        title_match  = re.search(r"TITLE[:：]\s*(.+)", cover_raw)
-        prompt_match = re.search(r"PROMPT[:：]\s*([\s\S]+)", cover_raw)
-        cover_title_c = title_match.group(1).strip()  if title_match  else ""
-        cover_prompt  = prompt_match.group(1).strip() if prompt_match else ""
+        title_match   = re.search(r"TITLE[:：]\s*(.+)", cover_raw)
+        prompt_match  = re.search(r"PROMPT[:：]\s*([\s\S]+?)(?=INSIGHT[:：]|$)", cover_raw)
+        insight_match = re.search(r"INSIGHT[:：]\s*([\s\S]+)", cover_raw)
+        cover_title_c = title_match.group(1).strip()   if title_match   else ""
+        cover_prompt  = prompt_match.group(1).strip()  if prompt_match  else ""
+        cover_insight = insight_match.group(1).strip() if insight_match else ""
         if not cover_prompt:
             print("[阶段C] ⚠️ 未找到 PROMPT:，封面图跳过生成", flush=True)
+        if not cover_insight:
+            print("[阶段C] ⚠️ 未找到 INSIGHT:，深度解读为空", flush=True)
         print(f"\n[阶段C] 动态标题：{cover_title_c}", flush=True)
-        print(f"[阶段C] 封面图提示词：{cover_prompt[:100]}...", flush=True)
+        print(f"[阶段C] 封面图提示词：{cover_prompt[:80]}...", flush=True)
+        print(f"[阶段C] 深度解读：{cover_insight[:60]}...", flush=True)
 
         browser.close()
 
@@ -699,11 +716,10 @@ def main():
 
     # ── Step 7：标题（优先阶段C动态标题，fallback 正文标题）────
     if cover_title_c:
-        title = f"{get_beijing_date_cn()} | {cover_title_c}"
+        title = cover_title_c
     else:
         title_match = re.search(r'AI圈极客吃瓜日报[^\n]*', final_markdown)
-        title = title_match.group(0).strip() if title_match else \
-                f"{get_beijing_date_cn()} AI圈极客吃瓜日报"
+        title = title_match.group(0).strip() if title_match else "AI圈极客吃瓜日报"
     print(f"\n标题：{title}", flush=True)
 
     # ── Step 8：上传封面图到路过图床 ────────────────────────────
@@ -713,11 +729,11 @@ def main():
 
     # ── Step 9：推送飞书 ─────────────────────────────────────────
     print("\n推送飞书...", flush=True)
-    push_to_feishu(final_markdown, final_cover_url)
+    push_to_feishu(final_markdown)
 
     # ── Step 10：推送极简云（微信公众号）───────────────────────
     print("推送极简云...", flush=True)
-    push_to_jijyun(final_markdown, title, final_cover_url)
+    push_to_jijyun(final_markdown, title, final_cover_url, cover_insight)
 
     print("\n🎉 全部完成！", flush=True)
 
